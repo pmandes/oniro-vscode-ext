@@ -3,7 +3,7 @@ import { oniroLogChannel } from './logger';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as json5 from 'json5';
-import { getOhosBaseSdkHome } from './sdkUtils';
+import { getCmdToolsPath, getOhosBaseSdkHome } from './sdkUtils';
 import { generateSigningConfigs } from './generate_signing_configs';
 
 const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -13,9 +13,16 @@ const projectDir = workspaceFolders && workspaceFolders.length > 0
 
 const logChannel = oniroLogChannel;
 
-export async function onirobuilderBuild(): Promise<void> {
-  logChannel.appendLine(`[onirobuilder] onirobuilderBuild called`);
-  // Check build-profile.json5 for signingConfigs
+function getHvigorwPath(projectDirPath: string): string {
+  const cmdToolsBin = path.join(getCmdToolsPath(), 'bin');
+  let hvigorwPath = path.join(projectDirPath, 'hvigorw');
+  if (!fs.existsSync(hvigorwPath)) {
+    hvigorwPath = path.join(cmdToolsBin, 'hvigorw');
+  }
+  return hvigorwPath;
+}
+
+async function ensureSigningConfigs(): Promise<void> {
   const buildProfilePath = path.join(projectDir, 'build-profile.json5');
   if (fs.existsSync(buildProfilePath)) {
     try {
@@ -44,6 +51,24 @@ export async function onirobuilderBuild(): Promise<void> {
     );
     throw new Error('build-profile.json5 not found');
   }
+}
+
+async function runTaskAndWait(task: vscode.Task): Promise<void> {
+  return new Promise((resolve) => {
+    vscode.tasks.executeTask(task).then((execution) => {
+      const disposable = vscode.tasks.onDidEndTask(e => {
+        if (e.execution === execution) {
+          disposable.dispose();
+          resolve();
+        }
+      });
+    });
+  });
+}
+
+export async function onirobuilderBuild(): Promise<void> {
+  logChannel.appendLine(`[onirobuilder] onirobuilderBuild called`);
+  await ensureSigningConfigs();
 
   // Fetch Oniro build task and execute it
   logChannel.appendLine(`[onirobuilder] Fetching Oniro build task...`);
@@ -55,26 +80,48 @@ export async function onirobuilderBuild(): Promise<void> {
     throw new Error('Missing Oniro build task');
   }
 
-  // Helper to execute a task and wait for it to finish
-  async function runTaskAndWait(task: vscode.Task): Promise<void> {
-    return new Promise((resolve) => {
-      vscode.tasks.executeTask(task).then((execution) => {
-        const disposable = vscode.tasks.onDidEndTask(e => {
-          if (e.execution === execution) {
-            disposable.dispose();
-            resolve();
-          }
-        });
-      });
-    });
-  }
-
   try {
     logChannel.appendLine(`[onirobuilder] Running Build task...`);
     await runTaskAndWait(buildTask);
     logChannel.appendLine(`[onirobuilder] Build Process Complete.`);
   } catch (err) {
     logChannel.appendLine(`[onirobuilder] Error running Oniro build task: ${err}`);
+    vscode.window.showErrorMessage(`Oniro build failed: ${err}`);
+    throw err;
+  }
+}
+
+export async function onirobuilderBuildWithParams(params: { product: string; module: string; buildMode: string }): Promise<void> {
+  logChannel.appendLine(`[onirobuilder] onirobuilderBuildWithParams called`);
+  await ensureSigningConfigs();
+
+  const product = params.product?.trim();
+  const moduleName = params.module?.trim();
+  const buildMode = params.buildMode?.trim();
+
+  if (!product || !moduleName || !buildMode) {
+    vscode.window.showErrorMessage('Missing build parameters (product, module, build mode).');
+    throw new Error('Missing build parameters');
+  }
+
+  const env = { ...process.env, OHOS_BASE_SDK_HOME: getOhosBaseSdkHome() };
+  const hvigorwPath = getHvigorwPath(projectDir);
+  const command = `${hvigorwPath} assembleHap --mode module -p product=${product} -p module=${moduleName} -p buildMode=${buildMode} --stacktrace --no-parallel --no-daemon`;
+  const task = new vscode.Task(
+    { type: 'oniro' },
+    vscode.TaskScope.Workspace,
+    'build (config)',
+    'oniro',
+    new vscode.ShellExecution(command, { cwd: projectDir, env }),
+    []
+  );
+
+  try {
+    logChannel.appendLine(`[onirobuilder] Running Build task with params: product=${product}, module=${moduleName}, buildMode=${buildMode}`);
+    await runTaskAndWait(task);
+    logChannel.appendLine(`[onirobuilder] Build Process Complete.`);
+  } catch (err) {
+    logChannel.appendLine(`[onirobuilder] Error running Oniro build task (params): ${err}`);
     vscode.window.showErrorMessage(`Oniro build failed: ${err}`);
     throw err;
   }
