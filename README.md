@@ -7,6 +7,7 @@ Oniro IDE is a lightweight, integrated development environment as a Visual Studi
 ## Features
 
 - **Oniro Tree View**: Access all Oniro development actions from a dedicated sidebar, including build, sign, emulator control, app install/launch, SDK Manager, and HiLog Viewer.
+- **Project Creation**: Create a new Oniro/OpenHarmony (ArkTS/ArkUI) project from a template, with initial SDK/module configuration and workspace settings.
 - **Build and Sign**: Compile and sign your Oniro/OpenHarmony application with a single command.
 - **Emulator Management**: Start, stop, and connect to the Oniro emulator directly from VS Code.
 - **App Deployment**: Install and launch `.hap` packages on the emulator or connected device.
@@ -57,7 +58,12 @@ code .
 
 1. Install and enable the Oniro IDE extension in VS Code.
 2. Use the Oniro sidebar to access all main actions, or open the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`) and search for Oniro commands.
-3. Typical workflow:
+3. Create a new project:
+    - Run **Oniro: Create Project** (`oniro-ide.createProject`).
+    - Choose a template, project name, bundle name, location, SDK API, and module name.
+    - Click **Create** and then **Open Project**.
+    - The extension creates `local.properties` (with `sdk.dir=...`) so the build uses the installed SDK base directory.
+4. Typical workflow:
    - **SDK & Tools Setup**: Open the **SDK Manager** from the sidebar to install or update the required OpenHarmony SDKs, command-line tools, and the Oniro emulator before starting development.
    - **Signature Configs**: If your application does not already have signing configurations, generate them using the Oniro IDE (see sidebar or command palette for signature config generation commands).
    - **Build and Sign**: Use **Oniro: Build App** and **Oniro: Sign App** to prepare your application.
@@ -68,6 +74,7 @@ code .
 
 ## Available Commands
 
+- `oniro-ide.createProject`: Create a new Oniro project from template
 - `oniro-ide.runAll`: Run all steps (start emulator, build, install, launch, and open HiLog Viewer)
 - `oniro-ide.build`: Build the Oniro app
 - `oniro-ide.sign`: Sign the Oniro app

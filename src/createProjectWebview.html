@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Oniro: Create Project</title>
+	<style>
+		:root {
+			--bg: var(--vscode-editor-background);
+			--fg: var(--vscode-editor-foreground);
+			--muted: var(--vscode-descriptionForeground);
+			--panel: var(--vscode-editorWidget-background);
+			--border: var(--vscode-editorWidget-border);
+			--btn: var(--vscode-button-background);
+			--btnFg: var(--vscode-button-foreground);
+			--btnHover: var(--vscode-button-hoverBackground);
+			--btnSecondary: var(--vscode-button-secondaryBackground);
+			--btnSecondaryFg: var(--vscode-button-secondaryForeground);
+			--btnSecondaryHover: var(--vscode-button-secondaryHoverBackground);
+			--error: var(--vscode-errorForeground);
+		}
+		body {
+			margin: 0;
+			padding: 16px;
+			background: var(--bg);
+			color: var(--fg);
+			font-family: var(--vscode-font-family);
+		}
+		.container {
+			max-width: 820px;
+			margin: 0 auto;
+		}
+		.card {
+			background: var(--panel);
+			border: 1px solid var(--border);
+			border-radius: 10px;
+			padding: 16px;
+		}
+		h1 {
+			font-size: 18px;
+			margin: 0 0 12px 0;
+		}
+		.grid {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 12px;
+		}
+		@media (max-width: 800px) {
+			.grid {
+				grid-template-columns: 1fr;
+			}
+		}
+		.field label {
+			display: block;
+			font-size: 12px;
+			color: var(--muted);
+			margin: 0 0 6px 0;
+		}
+		.field input,
+		.field select {
+			width: 100%;
+			box-sizing: border-box;
+			padding: 8px 10px;
+			border-radius: 6px;
+			border: 1px solid var(--border);
+			background: var(--bg);
+			color: var(--fg);
+		}
+		.row {
+			display: flex;
+			gap: 8px;
+			align-items: center;
+		}
+		.row input { flex: 1; }
+		.actions {
+			display: flex;
+			gap: 10px;
+			justify-content: flex-end;
+			margin-top: 14px;
+		}
+		button {
+			border: 0;
+			border-radius: 6px;
+			padding: 8px 14px;
+			cursor: pointer;
+			font-weight: 600;
+		}
+		button.primary {
+			background: var(--btn);
+			color: var(--btnFg);
+		}
+		button.primary:hover { background: var(--btnHover); }
+		button.secondary {
+			background: var(--btnSecondary);
+			color: var(--btnSecondaryFg);
+		}
+		button.secondary:hover { background: var(--btnSecondaryHover); }
+		.help {
+			margin-top: 10px;
+			color: var(--muted);
+			font-size: 12px;
+			line-height: 1.4;
+		}
+		.error {
+			color: var(--error);
+			font-size: 12px;
+			margin-top: 10px;
+			white-space: pre-wrap;
+		}
+	</style>
+</head>
+<body>
+	<div class="container">
+		<div class="card">
+			<h1>Create Project</h1>
+
+			<div class="grid">
+				<div class="field" style="grid-column: 1 / -1;">
+					<label for="templateSelect">Template</label>
+					<select id="templateSelect"></select>
+					<div id="templateDesc" class="help" style="margin-top: 6px;"></div>
+				</div>
+
+				<div class="field">
+					<label for="projectName">Project name</label>
+					<input id="projectName" type="text" placeholder="MyApplication" />
+				</div>
+				<div class="field">
+					<label for="bundleName">Bundle name</label>
+					<input id="bundleName" type="text" placeholder="com.example.myapplication" />
+				</div>
+
+				<div class="field" style="grid-column: 1 / -1;">
+					<label for="location">Location</label>
+					<div class="row">
+						<input id="location" type="text" placeholder="Select a folder..." readonly />
+						<button id="browseBtn" class="secondary" type="button">Browse…</button>
+					</div>
+				</div>
+
+				<div class="field">
+					<label for="sdkSelect">Compatible SDK</label>
+					<select id="sdkSelect"></select>
+				</div>
+
+				<div class="field">
+					<label for="moduleName">Module name</label>
+					<input id="moduleName" type="text" value="entry" />
+				</div>
+			</div>
+
+			<div class="actions">
+				<button id="createBtn" class="primary" type="button">CREATE</button>
+			</div>
+
+			<div class="help">
+				Creates a new project from the bundled template and updates the relevant JSON/JSON5 configs.
+			</div>
+			<div id="error" class="error" style="display:none"></div>
+		</div>
+	</div>
+
+	<script>
+		const vscode = acquireVsCodeApi();
+
+		function setError(message) {
+			const el = document.getElementById('error');
+			if (!message) {
+				el.style.display = 'none';
+				el.textContent = '';
+				return;
+			}
+			el.style.display = '';
+			el.textContent = message;
+		}
+
+		window.addEventListener('message', (event) => {
+			const msg = event.data;
+			switch (msg?.command) {
+				case 'init': {
+					if (Array.isArray(msg.templateOptions)) {
+						const select = document.getElementById('templateSelect');
+						const desc = document.getElementById('templateDesc');
+						select.innerHTML = '';
+						const options = msg.templateOptions;
+						const descById = {};
+						options.forEach((tpl) => { descById[String(tpl.id)] = String(tpl.description || ''); });
+						msg.templateOptions.forEach((tpl) => {
+							const opt = document.createElement('option');
+							opt.value = String(tpl.id);
+							opt.textContent = String(tpl.label);
+							select.appendChild(opt);
+						});
+
+						function updateDesc() {
+							const text = descById[String(select.value)] || '';
+							desc.textContent = text;
+						}
+						select.onchange = updateDesc;
+						updateDesc();
+					}
+					if (Array.isArray(msg.sdkOptions)) {
+						const select = document.getElementById('sdkSelect');
+						select.innerHTML = '';
+						msg.sdkOptions.forEach((sdk) => {
+							const opt = document.createElement('option');
+							opt.value = String(sdk.api);
+							opt.textContent = `${sdk.version} (API ${sdk.api})${sdk.installed ? ' — installed' : ''}`;
+							select.appendChild(opt);
+						});
+					}
+					if (msg.defaults?.projectName) document.getElementById('projectName').value = msg.defaults.projectName;
+					if (msg.defaults?.bundleName) document.getElementById('bundleName').value = msg.defaults.bundleName;
+					if (msg.defaults?.location) document.getElementById('location').value = msg.defaults.location;
+					if (msg.defaults?.sdkApi) document.getElementById('sdkSelect').value = String(msg.defaults.sdkApi);
+					if (msg.defaults?.moduleName) document.getElementById('moduleName').value = msg.defaults.moduleName;
+					if (msg.defaults?.templateId) {
+						document.getElementById('templateSelect').value = String(msg.defaults.templateId);
+						const event = new Event('change');
+						document.getElementById('templateSelect').dispatchEvent(event);
+					}
+					break;
+				}
+				case 'locationPicked': {
+					document.getElementById('location').value = msg.location || '';
+					break;
+				}
+				case 'setError': {
+					setError(msg.message || 'Unknown error');
+					break;
+				}
+				case 'clearError': {
+					setError('');
+					break;
+				}
+			}
+		});
+
+		window.addEventListener('DOMContentLoaded', () => {
+			vscode.postMessage({ command: 'webviewReady' });
+		});
+
+		document.getElementById('browseBtn').addEventListener('click', () => {
+			setError('');
+			vscode.postMessage({ command: 'pickLocation' });
+		});
+
+		document.getElementById('createBtn').addEventListener('click', () => {
+			setError('');
+			const payload = {
+				templateId: document.getElementById('templateSelect').value,
+				projectName: document.getElementById('projectName').value.trim(),
+				bundleName: document.getElementById('bundleName').value.trim(),
+				location: document.getElementById('location').value.trim(),
+				sdkApi: Number(document.getElementById('sdkSelect').value),
+				moduleName: document.getElementById('moduleName').value.trim() || 'entry'
+			};
+			vscode.postMessage({ command: 'createProject', ...payload });
+		});
+	</script>
+</body>
+</html>

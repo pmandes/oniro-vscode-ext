@@ -10,6 +10,7 @@ import { OniroTreeDataProvider, OniroCommands } from './OniroTreeDataProvider';
 import { registerSdkManagerCommand } from './sdkManager';
 import { OniroDebugConfigurationProvider } from './providers/OniroDebugConfigurationProvider';
 import { OniroTaskProvider } from './providers/oniroTaskProvider';
+import { registerCreateProjectCommand } from './createProject';
 
 // Helper function to detect app process ID and open HiLog viewer
 async function detectProcessIdAndShowHilog(token?: vscode.CancellationToken, progress?: vscode.Progress<{ message?: string; increment?: number }>): Promise<void> {
@@ -197,6 +198,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	registerHilogViewerCommand(context);
 	registerSdkManagerCommand(context);
+	registerCreateProjectCommand(context);
 
 	context.subscriptions.push(
 		buildDisposable,

@@ -3,7 +3,7 @@ import * as path from "path";
 import { execSync } from "child_process";
 import { encryptPwd, createMaterial } from './encrypt_key';
 import * as json5 from "json5";
-import { detectProjectSdkVersion } from './sdkUtils'
+import { detectProjectSdkVersion } from './sdkUtils';
 
 // Function to copy necessary files to the project directory
 function copyFilesToProject(projectDir: string, KEYSTORE_FILE: string, PROFILE_CERT_FILE: string, UNSIGNED_PROFILE_TEMPLATE: string): void {
@@ -129,7 +129,9 @@ function updateBuildProfile(projectDir: string): void {
         }
     ];
 
-    fs.writeFileSync(buildProfilePath, json5.stringify(buildProfile, null, 2));
+    // Write strict JSON (quoted keys) even though the file extension is .json5.
+    // This keeps the file readable by JSON5 parsers and avoids VS Code JSON errors.
+    fs.writeFileSync(buildProfilePath, JSON.stringify(buildProfile, null, 2));
     console.log("Build profile updated successfully.");
 }
 

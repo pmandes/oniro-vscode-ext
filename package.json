@@ -17,10 +17,31 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": ["onDebug"],
+  "activationEvents": [
+    "onView:oniroMainView",
+    "onCommand:oniro-ide.createProject",
+    "onCommand:oniro-ide.openSdkManager",
+    "onCommand:oniro-ide.runAll",
+    "onCommand:oniro-ide.build",
+    "onCommand:oniro-ide.sign",
+    "onCommand:oniro-ide.startEmulator",
+    "onCommand:oniro-ide.stopEmulator",
+    "onCommand:oniro-ide.connectEmulator",
+    "onCommand:oniro-ide.installApp",
+    "onCommand:oniro-ide.launchApp",
+    "onCommand:oniro-ide.showHilogViewer"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
+      {
+        "command": "oniro-ide.createProject",
+        "title": "Oniro: Create Project"
+      },
+      {
+        "command": "oniro-ide.openSdkManager",
+        "title": "Oniro: Open SDK Manager"
+      },
       {
         "command": "oniro-ide.startEmulator",
         "title": "Oniro: Start Emulator"

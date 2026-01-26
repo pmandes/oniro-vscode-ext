@@ -59,6 +59,12 @@
             color: var(--vscode-editorInfo-foreground, #4fc3f7);
             font-style: italic;
         }
+        .sdk-path {
+            font-size: 0.9em;
+            margin-top: 6px;
+            color: var(--vscode-descriptionForeground, #888);
+            word-break: break-all;
+        }
         .sdk-actions {
             display: flex;
             flex-direction: column;
@@ -131,6 +137,7 @@
                 <div class="sdk-info">
                     <span class="sdk-version">OpenHarmony Command Line Tools</span>
                     <span class="sdk-status" id="cmd-tools-status">Checking...</span>
+                    <span class="sdk-path" id="cmd-tools-path" style="display:none"></span>
                 </div>
                 <div class="sdk-actions">
                     <button id="cmd-tools-install" style="display:none">Install</button>
@@ -141,6 +148,7 @@
                 <div class="sdk-info">
                     <span class="sdk-version">Oniro Emulator</span>
                     <span class="sdk-status" id="emulator-status">Checking...</span>
+                    <span class="sdk-path" id="emulator-path" style="display:none"></span>
                 </div>
                 <div class="sdk-actions">
                     <button id="emulator-install" style="display:none">Install</button>
@@ -196,6 +204,7 @@
                             <span class="sdk-version">OpenHarmony ${sdk.version}</span>
                             <span class="sdk-api">API Level ${sdk.api}</span>
                             <span class="sdk-status">${sdk.installed ? 'Installed' : 'Not installed'}</span>
+                            ${sdk.installed && sdk.installPath ? `<span class="sdk-path">Path: ${sdk.installPath}</span>` : ''}
                         </div>
                         <div class="sdk-actions">
                             <input type="checkbox" class="sdk-checkbox" id="sdk-${sdk.version}" ${sdk.installed ? 'checked' : ''} disabled />
@@ -212,12 +221,28 @@
                 document.getElementById('cmd-tools-status').textContent = cmdTools.status;
                 document.getElementById('cmd-tools-install').style.display = cmdTools.installed ? 'none' : '';
                 document.getElementById('cmd-tools-remove').style.display = cmdTools.installed ? '' : 'none';
+
+                const pathEl = document.getElementById('cmd-tools-path');
+                if (cmdTools && cmdTools.installed && cmdTools.installPath) {
+                    pathEl.textContent = `Path: ${cmdTools.installPath}`;
+                    pathEl.style.display = '';
+                } else {
+                    pathEl.style.display = 'none';
+                }
             }
 
             updateEmulator(emulator) {
                 document.getElementById('emulator-status').textContent = emulator.status;
                 document.getElementById('emulator-install').style.display = emulator.installed ? 'none' : '';
                 document.getElementById('emulator-remove').style.display = emulator.installed ? '' : 'none';
+
+                const pathEl = document.getElementById('emulator-path');
+                if (emulator && emulator.installed && emulator.installPath) {
+                    pathEl.textContent = `Path: ${emulator.installPath}`;
+                    pathEl.style.display = '';
+                } else {
+                    pathEl.style.display = 'none';
+                }
             }
 
             downloadSdk(version, api) {
