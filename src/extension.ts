@@ -11,6 +11,7 @@ import { registerSdkManagerCommand } from './sdkManager';
 import { OniroDebugConfigurationProvider } from './providers/OniroDebugConfigurationProvider';
 import { OniroTaskProvider } from './providers/oniroTaskProvider';
 import { registerCreateProjectCommand } from './createProject';
+import { registerBuildConfigCommand } from './buildConfig';
 
 // Helper function to detect app process ID and open HiLog viewer
 async function detectProcessIdAndShowHilog(token?: vscode.CancellationToken, progress?: vscode.Progress<{ message?: string; increment?: number }>): Promise<void> {
@@ -62,15 +63,6 @@ async function detectProcessIdAndShowHilog(token?: vscode.CancellationToken, pro
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-
-	const buildDisposable = vscode.commands.registerCommand(OniroCommands.BUILD, async () => {
-		try {
-			await onirobuilderBuild();
-			vscode.window.showInformationMessage('Build completed!');
-		} catch (err) {
-			vscode.window.showErrorMessage(`Build failed: ${err}`);
-		}
-	});
 
 	const signDisposable = vscode.commands.registerCommand(OniroCommands.SIGN, async () => {
 		try {
@@ -199,9 +191,9 @@ export function activate(context: vscode.ExtensionContext) {
 	registerHilogViewerCommand(context);
 	registerSdkManagerCommand(context);
 	registerCreateProjectCommand(context);
+	registerBuildConfigCommand(context);
 
 	context.subscriptions.push(
-		buildDisposable,
 		signDisposable,
 		startEmulatorDisposable,
 		stopEmulatorDisposable,

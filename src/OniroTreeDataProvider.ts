@@ -43,7 +43,7 @@ export class OniroTreeDataProvider implements vscode.TreeDataProvider<vscode.Tre
                 command: OniroCommands.BUILD,
                 title: 'Build Oniro App'
             };
-            buildItem.tooltip = 'Builds the Oniro application.';
+            buildItem.tooltip = 'Configure build options.';
             buildItem.iconPath = new vscode.ThemeIcon('package');
 
             const signItem = new vscode.TreeItem('Sign', vscode.TreeItemCollapsibleState.None);

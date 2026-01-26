@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Oniro: Build Configuration</title>
+	<style>
+		:root {
+			--bg: var(--vscode-editor-background);
+			--fg: var(--vscode-editor-foreground);
+			--muted: var(--vscode-descriptionForeground);
+			--panel: var(--vscode-editorWidget-background);
+			--border: var(--vscode-editorWidget-border);
+			--btn: var(--vscode-button-background);
+			--btnFg: var(--vscode-button-foreground);
+			--error: var(--vscode-errorForeground);
+		}
+		body {
+			margin: 0;
+			padding: 16px;
+			background: var(--bg);
+			color: var(--fg);
+			font-family: var(--vscode-font-family);
+		}
+		.container {
+			max-width: 920px;
+			margin: 0 auto;
+		}
+		.card {
+			background: var(--panel);
+			border: 1px solid var(--border);
+			border-radius: 10px;
+			padding: 16px;
+			margin-bottom: 16px;
+		}
+		h1 {
+			font-size: 18px;
+			margin: 0 0 12px 0;
+		}
+		.grid {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 12px;
+		}
+		.stacked-grid {
+			display: grid;
+			grid-template-columns: 1fr;
+			gap: 12px;
+		}
+		.config-grid {
+			display: grid;
+			grid-template-columns: 2fr 1fr;
+			gap: 16px;
+			align-items: start;
+		}
+		.product-props {
+			display: grid;
+			grid-template-columns: 1fr;
+			gap: 10px;
+			margin-top: 4px;
+		}
+		.prop-row {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 12px;
+		}
+		.prop-label {
+			color: #ffffff;
+			font-weight: 600;
+			font-size: 12px;
+		}
+		.prop-value {
+			color: var(--fg);
+			font-size: 12px;
+			text-align: right;
+			word-break: break-word;
+		}
+		.package-grid {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 16px;
+		}
+		.package-fields {
+			display: grid;
+			grid-template-columns: 1fr;
+			gap: 10px;
+		}
+		.package-title {
+			font-size: 14px;
+			margin: 0 0 8px 0;
+			color: var(--fg);
+			font-weight: 600;
+		}
+		@media (max-width: 900px) {
+			.grid { grid-template-columns: 1fr; }
+			.config-grid { grid-template-columns: 1fr; }
+			.package-grid { grid-template-columns: 1fr; }
+		}
+		.field label {
+			display: block;
+			font-size: 12px;
+			color: var(--muted);
+			margin: 0 0 6px 0;
+		}
+		.signing .field label {
+			color: #ffffff;
+			font-weight: 600;
+			font-size: 13px;
+		}
+		.field select {
+			width: 100%;
+			box-sizing: border-box;
+			padding: 8px 10px;
+			border-radius: 6px;
+			border: 1px solid var(--border);
+			background: var(--bg);
+			color: var(--fg);
+		}
+		.kv {
+			font-size: 12px;
+			color: var(--muted);
+			line-height: 1.5;
+			word-break: break-word;
+		}
+		.code {
+			font-family: var(--vscode-editor-font-family);
+			font-size: 12px;
+			background: var(--bg);
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			padding: 10px;
+			white-space: pre-wrap;
+			word-break: break-word;
+		}
+		.actions {
+			display: flex;
+			justify-content: flex-end;
+			margin-top: 12px;
+		}
+		.btn {
+			background: var(--btn);
+			color: var(--btnFg);
+			border: none;
+			border-radius: 6px;
+			padding: 8px 16px;
+			font-weight: 600;
+			cursor: pointer;
+		}
+		.btn:disabled {
+			opacity: 0.6;
+			cursor: not-allowed;
+		}
+	</style>
+</head>
+<body>
+	<div class="container">
+		<div class="card">
+			<h1>Build Configuration</h1>
+			<div class="config-grid">
+				<div>
+					<div class="stacked-grid">
+						<div class="field">
+							<label for="productSelect">Product</label>
+							<select id="productSelect"></select>
+						</div>
+						<div class="field">
+							<label for="moduleSelect">Module</label>
+							<select id="moduleSelect"></select>
+						</div>
+						<div class="field">
+							<label for="buildModeSelect">Build mode</label>
+							<select id="buildModeSelect"></select>
+						</div>
+					</div>
+				</div>
+				<div>
+					<div class="package-title">Product info</div>
+					<div class="product-props" id="product-props"></div>
+				</div>
+			</div>
+			<div class="actions">
+				<button class="btn" id="buildButton">BUILD</button>
+			</div>
+		</div>
+
+		<div class="card signing">
+			<h1>Signing Config</h1>
+			<div class="grid">
+				<div class="field">
+					<label>Name</label>
+					<div class="kv" id="signing-name"></div>
+				</div>
+				<div class="field">
+					<label>Key Alias</label>
+					<div class="kv" id="signing-keyAlias"></div>
+				</div>
+				<div class="field">
+					<label>Store File</label>
+					<div class="kv" id="signing-storeFile"></div>
+				</div>
+				<div class="field">
+					<label>Cert Path</label>
+					<div class="kv" id="signing-certpath"></div>
+				</div>
+				<div class="field">
+					<label>Profile</label>
+					<div class="kv" id="signing-profile"></div>
+				</div>
+				<div class="field">
+					<label>Sign Algorithm</label>
+					<div class="kv" id="signing-signAlg"></div>
+				</div>
+				<div class="field">
+					<label>Store Password</label>
+					<div class="kv" id="signing-storePassword"></div>
+				</div>
+				<div class="field">
+					<label>Key Password</label>
+					<div class="kv" id="signing-keyPassword"></div>
+				</div>
+			</div>
+		</div>
+
+		<div class="card">
+			<h1>Packages</h1>
+			<div class="package-grid">
+				<div>
+					<div class="package-title">Root package</div>
+					<div class="package-fields" id="rootPackageFields"></div>
+				</div>
+				<div>
+					<div class="package-title">Module package</div>
+					<div class="package-fields" id="modulePackageFields"></div>
+				</div>
+			</div>
+		</div>
+
+		<div class="card">
+			<h1>Command Preview</h1>
+			<div class="code" id="commandPreview"></div>
+		</div>
+	</div>
+
+	<script>
+		const vscode = acquireVsCodeApi();
+		let state = {
+			modules: [],
+			modulesDetails: [],
+			products: [],
+			productsDetails: [],
+			buildModes: [],
+			signingConfigs: [],
+			rootPackage: undefined,
+			modulePackages: {},
+			defaults: { module: '', product: '', buildMode: '' },
+			current: { module: '', product: '', buildMode: '' }
+		};
+
+		function toLines(obj) {
+			if (!obj) return 'No data';
+			return JSON.stringify(obj, null, 2);
+		}
+
+		function renderPackageFields(containerId, obj) {
+			const container = document.getElementById(containerId);
+			container.innerHTML = '';
+			if (!obj || Object.keys(obj).length === 0) {
+				const empty = document.createElement('div');
+				empty.className = 'kv';
+				empty.textContent = 'No data';
+				container.appendChild(empty);
+				return;
+			}
+			Object.entries(obj).forEach(([key, value]) => {
+				const row = document.createElement('div');
+				row.className = 'prop-row';
+				const label = document.createElement('span');
+				label.className = 'prop-label';
+				label.textContent = key;
+				const val = document.createElement('span');
+				val.className = 'prop-value';
+				if (value && typeof value === 'object') {
+					val.textContent = JSON.stringify(value, null, 2);
+				} else {
+					val.textContent = value ?? '—';
+				}
+				row.appendChild(label);
+				row.appendChild(val);
+				container.appendChild(row);
+			});
+		}
+
+		function renderProductProps(containerId, obj) {
+			const container = document.getElementById(containerId);
+			container.innerHTML = '';
+			if (!obj || Object.keys(obj).length === 0) {
+				return;
+			}
+			Object.entries(obj).forEach(([key, value]) => {
+				const row = document.createElement('div');
+				row.className = 'prop-row';
+				const label = document.createElement('span');
+				label.className = 'prop-label';
+				label.textContent = key;
+				const val = document.createElement('span');
+				val.className = 'prop-value';
+				if (value && typeof value === 'object') {
+					val.textContent = JSON.stringify(value, null, 2);
+				} else {
+					val.textContent = value ?? '—';
+				}
+				row.appendChild(label);
+				row.appendChild(val);
+				container.appendChild(row);
+			});
+		}
+
+		function findSigningConfig(productName) {
+			const product = state.productsDetails?.find(p => p.name === productName);
+			const signingName = product?.signingConfig;
+			if (!signingName) return undefined;
+			return state.signingConfigs.find(cfg => cfg.name === signingName);
+		}
+
+		function moduleAllowedProducts(moduleName) {
+			const mod = state.modulesDetails?.find(m => m.name === moduleName);
+			const targets = mod?.targets || [];
+			const productSet = new Set();
+			targets.forEach(t => {
+				(t.applyToProducts || []).forEach(p => productSet.add(p));
+			});
+			return productSet.size > 0 ? Array.from(productSet) : state.products;
+		}
+
+		function modulesAllowedForProduct(productName) {
+			const allowed = [];
+			(state.modulesDetails || []).forEach(mod => {
+				const targets = mod.targets || [];
+				const applies = targets.some(t => (t.applyToProducts || []).includes(productName));
+				if (applies || targets.length === 0) {
+					allowed.push(mod.name);
+				}
+			});
+			return allowed.length > 0 ? allowed : state.modules;
+		}
+
+		function buildCommandPreview() {
+			const module = document.getElementById('moduleSelect').value;
+			const product = document.getElementById('productSelect').value;
+			const buildMode = document.getElementById('buildModeSelect').value;
+			return `hvigorw assembleHap --mode module -p product=${product} -p module=${module} -p buildMode=${buildMode} --stacktrace --no-parallel --no-daemon`;
+		}
+
+		function render() {
+			const moduleSelect = document.getElementById('moduleSelect');
+			const productSelect = document.getElementById('productSelect');
+			const buildModeSelect = document.getElementById('buildModeSelect');
+
+			function fillSelect(select, items, selected, emptyLabel) {
+				select.innerHTML = '';
+				if (!items || items.length === 0) {
+					const opt = document.createElement('option');
+					opt.value = '';
+					opt.textContent = emptyLabel || 'No options';
+					select.appendChild(opt);
+					select.disabled = true;
+					return;
+				}
+				select.disabled = false;
+				items.forEach((item) => {
+					const opt = document.createElement('option');
+					opt.value = item;
+					opt.textContent = item;
+					select.appendChild(opt);
+				});
+				if (selected) select.value = selected;
+			}
+
+			const selectedProduct = state.current.product || state.defaults.product || state.products[0] || '';
+			fillSelect(productSelect, state.products, selectedProduct, 'No products found');
+			const allowedModules = modulesAllowedForProduct(productSelect.value);
+			const selectedModule = allowedModules.includes(state.current.module)
+				? state.current.module
+				: (state.defaults.module || allowedModules[0] || '');
+			fillSelect(moduleSelect, allowedModules, selectedModule, 'No modules found');
+			const selectedBuildMode = state.current.buildMode || state.defaults.buildMode || state.buildModes[0] || '';
+			fillSelect(buildModeSelect, state.buildModes, selectedBuildMode, 'No build modes');
+
+			const selectedProductName = productSelect.value;
+			const selectedProductDetails = state.productsDetails?.find(p => p.name === selectedProductName)
+				|| (selectedProductName ? { name: selectedProductName } : undefined);
+			renderProductProps('product-props', selectedProductDetails);
+			renderPackageFields('rootPackageFields', state.rootPackage);
+			renderPackageFields('modulePackageFields', state.modulePackages[moduleSelect.value]);
+
+			const signing = findSigningConfig(productSelect.value);
+			document.getElementById('signing-name').textContent = signing?.name || '—';
+			document.getElementById('signing-keyAlias').textContent = signing?.material?.keyAlias || '—';
+			document.getElementById('signing-storeFile').textContent = signing?.material?.storeFile || '—';
+			document.getElementById('signing-certpath').textContent = signing?.material?.certpath || '—';
+			document.getElementById('signing-profile').textContent = signing?.material?.profile || '—';
+			document.getElementById('signing-signAlg').textContent = signing?.material?.signAlg || '—';
+			document.getElementById('signing-storePassword').textContent = signing?.material?.storePassword || '—';
+			document.getElementById('signing-keyPassword').textContent = signing?.material?.keyPassword || '—';
+			document.getElementById('commandPreview').textContent = buildCommandPreview();
+		}
+
+		function attachListeners() {
+			document.getElementById('productSelect').addEventListener('change', (event) => {
+				state.current.product = event.target.value;
+				state.current.module = '';
+				render();
+			});
+			document.getElementById('moduleSelect').addEventListener('change', (event) => {
+				state.current.module = event.target.value;
+				render();
+			});
+			document.getElementById('buildModeSelect').addEventListener('change', (event) => {
+				state.current.buildMode = event.target.value;
+				render();
+			});
+			document.getElementById('buildButton').addEventListener('click', () => {
+				const module = document.getElementById('moduleSelect').value;
+				const product = document.getElementById('productSelect').value;
+				const buildMode = document.getElementById('buildModeSelect').value;
+				vscode.postMessage({
+					command: 'build',
+					data: { module, product, buildMode }
+				});
+			});
+		}
+
+		window.addEventListener('message', (event) => {
+			const msg = event.data;
+			if (msg?.command === 'init') {
+				state = {
+					...state,
+					...msg.data,
+					productsDetails: msg.data.productsDetails || msg.data.products?.map(name => ({ name })) || [],
+					current: {
+						module: msg.data?.defaults?.module || '',
+						product: msg.data?.defaults?.product || '',
+						buildMode: msg.data?.defaults?.buildMode || ''
+					}
+				};
+				render();
+				attachListeners();
+			}
+		});
+
+		window.addEventListener('DOMContentLoaded', () => {
+			vscode.postMessage({ command: 'webviewReady' });
+		});
+	</script>
+</body>
+</html>
