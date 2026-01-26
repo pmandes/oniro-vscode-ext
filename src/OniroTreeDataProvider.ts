@@ -21,6 +21,14 @@ export class OniroTreeDataProvider implements vscode.TreeDataProvider<vscode.Tre
             return Promise.resolve([]);
         } else {
             // Root level items
+            const createProjectItem = new vscode.TreeItem('Create Project', vscode.TreeItemCollapsibleState.None);
+            createProjectItem.command = {
+                command: OniroCommands.CREATE_PROJECT,
+                title: 'Create OpenHarmony Project'
+            };
+            createProjectItem.tooltip = 'Create a new OpenHarmony (ArkTS/ArkUI) project from template.';
+            createProjectItem.iconPath = new vscode.ThemeIcon('new-folder');
+
             const runAllItem = new vscode.TreeItem('Run All', vscode.TreeItemCollapsibleState.None);
             runAllItem.command = {
                 command: OniroCommands.RUN_ALL,
@@ -103,6 +111,7 @@ export class OniroTreeDataProvider implements vscode.TreeDataProvider<vscode.Tre
             hilogViewerItem.iconPath = new vscode.ThemeIcon('output');
 
             return Promise.resolve([
+                createProjectItem,
                 runAllItem,
                 buildItem,
                 signItem,
@@ -119,6 +128,7 @@ export class OniroTreeDataProvider implements vscode.TreeDataProvider<vscode.Tre
 }
 
 export class OniroCommands {
+    public static readonly CREATE_PROJECT = 'oniro-ide.createProject';
     public static readonly RUN_ALL = 'oniro-ide.runAll';
     public static readonly BUILD = 'oniro-ide.build';
     public static readonly SIGN = 'oniro-ide.sign';

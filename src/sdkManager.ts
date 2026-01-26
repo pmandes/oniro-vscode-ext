@@ -4,9 +4,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
     SdkInfo,
-    ALL_SDKS,
-    getInstalledSdks,
+    getOhosBaseSdkHome,
+    getCmdToolsPath,
+    getEmulatorDir,
     getCmdToolsStatus,
+    getSupportedSdksForUi,
     downloadAndInstallSdk,
     installCmdTools,
     removeCmdTools,
@@ -16,10 +18,12 @@ import {
     removeEmulator
 } from './utils/sdkUtils';
 
+type SdkInfoWithPath = SdkInfo & { installPath?: string };
+
 interface SdkManagerState {
-    sdks: SdkInfo[];
-    cmdTools: { installed: boolean; status: string };
-    emulator: { installed: boolean; status: string };
+    sdks: SdkInfoWithPath[];
+    cmdTools: { installed: boolean; status: string; installPath: string };
+    emulator: { installed: boolean; status: string; installPath: string };
 }
 
 interface MessageHandler {
@@ -32,18 +36,25 @@ interface SdkManagerContext {
     updateState: () => void;
 }
 
-export function getAvailableSdks(): SdkInfo[] {
-    const installedSdks = getInstalledSdks();
-    return ALL_SDKS.map(sdk => ({ ...sdk, installed: installedSdks.includes(sdk.version) }));
+export function getAvailableSdks(): SdkInfoWithPath[] {
+    const base = getOhosBaseSdkHome();
+    return getSupportedSdksForUi().map((sdk) => ({
+        ...sdk,
+        installPath: sdk.installed ? path.join(base, String(sdk.api)) : undefined
+    }));
 }
 
 function getCurrentState(): SdkManagerState {
     return {
         sdks: getAvailableSdks(),
-        cmdTools: getCmdToolsStatus(),
+        cmdTools: {
+            ...getCmdToolsStatus(),
+            installPath: getCmdToolsPath()
+        },
         emulator: {
             installed: isEmulatorInstalled(),
-            status: isEmulatorInstalled() ? 'Installed' : 'Not installed'
+            status: isEmulatorInstalled() ? 'Installed' : 'Not installed',
+            installPath: getEmulatorDir()
         }
     };
 }
@@ -73,7 +84,8 @@ const messageHandlers: MessageHandler = {
             });
             
             context.updateState();
-            vscode.window.showInformationMessage(`SDK ${message.version} (API ${message.api}) installed.`);
+            const sdkInstallPath = path.join(getOhosBaseSdkHome(), String(message.api));
+            vscode.window.showInformationMessage(`SDK ${message.version} (API ${message.api}) installed to: ${sdkInstallPath}`);
         } catch (err: any) {
             if (err?.message === 'Download cancelled') {
                 vscode.window.showWarningMessage('SDK download cancelled.');
@@ -118,7 +130,7 @@ const messageHandlers: MessageHandler = {
             });
             
             context.updateState();
-            vscode.window.showInformationMessage('Command line tools installed.');
+            vscode.window.showInformationMessage(`Command line tools installed to: ${getCmdToolsPath()}`);
         } catch (err: any) {
             if (err?.message === 'Download cancelled') {
                 vscode.window.showWarningMessage('Command line tools installation cancelled.');
@@ -157,7 +169,7 @@ const messageHandlers: MessageHandler = {
             });
             
             context.updateState();
-            vscode.window.showInformationMessage('Oniro Emulator installed.');
+            vscode.window.showInformationMessage(`Oniro Emulator installed to: ${getEmulatorDir()}`);
         } catch (err: any) {
             if (err?.message === 'Download cancelled') {
                 vscode.window.showWarningMessage('Emulator installation cancelled.');

@@ -17,6 +17,23 @@ export interface SdkInfo {
     installed: boolean;
 }
 
+/**
+ * Returns the list of SDKs known to this extension UI,
+ * annotated with installation status for the current OS folder.
+ *
+ * NOTE: Do not filter out older API levels here; the Create Project UI should
+ * stay in sync with SDK Manager.
+ */
+export function getSupportedSdksForUi(): SdkInfo[] {
+    const base = getOhosBaseSdkHome();
+    return ALL_SDKS
+        .map((sdk) => {
+            const sdkDir = path.join(base, String(sdk.api));
+            return { version: sdk.version, api: sdk.api, installed: fs.existsSync(sdkDir) };
+        })
+        .sort((a, b) => Number(b.api) - Number(a.api));
+}
+
 // Get Oniro SDK root and command tools path from configuration, with fallback to defaults
 function getOniroConfig<T = string>(key: string, fallback: T): T {
     const config = vscode.workspace.getConfiguration('oniro');

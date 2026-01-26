@@ -9,3 +9,7 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
+
+# Include the bundled OpenHarmony project template (it contains .ts files).
+!template/**
+!template/**/*.ts
