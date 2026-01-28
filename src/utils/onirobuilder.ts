@@ -15,11 +15,18 @@ const logChannel = oniroLogChannel;
 
 function getHvigorwPath(projectDirPath: string): string {
   const cmdToolsBin = path.join(getCmdToolsPath(), 'bin');
-  let hvigorwPath = path.join(projectDirPath, 'hvigorw');
-  if (!fs.existsSync(hvigorwPath)) {
-    hvigorwPath = path.join(cmdToolsBin, 'hvigorw');
+  const candidates = [
+    path.join(projectDirPath, 'hvigorw'),
+    path.join(projectDirPath, 'hvigorw.bat'),
+    path.join(projectDirPath, 'hvigorw.cmd'),
+    path.join(cmdToolsBin, 'hvigorw'),
+    path.join(cmdToolsBin, 'hvigorw.bat'),
+    path.join(cmdToolsBin, 'hvigorw.cmd')
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {return candidate;}
   }
-  return hvigorwPath;
+  return candidates[0];
 }
 
 async function ensureSigningConfigs(): Promise<void> {

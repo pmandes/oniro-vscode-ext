@@ -101,10 +101,8 @@
         "runtime": "node",
         "configurationAttributes": {
           "oniro-debug": {
-            "properties": {
-            },
-            "required": [
-            ]
+            "properties": {},
+            "required": []
           }
         },
         "initialConfigurations": [
@@ -148,10 +146,30 @@
           "default": "${userHome}/command-line-tools",
           "description": "Directory where OpenHarmony command-line tools are installed."
         },
+        "oniro.cmdToolsUrlLinux": {
+          "type": "string",
+          "default": "https://repo.huaweicloud.com/harmonyos/ohpm/5.1.0/commandline-tools-linux-x64-5.1.0.840.zip",
+          "description": "Download URL for OpenHarmony command-line tools on Linux."
+        },
+        "oniro.cmdToolsUrlWindows": {
+          "type": "string",
+          "default": "",
+          "description": "Download URL for OpenHarmony command-line tools on Windows."
+        },
+        "oniro.cmdToolsUrlMac": {
+          "type": "string",
+          "default": "",
+          "description": "Download URL for OpenHarmony command-line tools on macOS."
+        },
         "oniro.emulatorDir": {
           "type": "string",
           "default": "${userHome}/oniro-emulator",
           "description": "Directory where Oniro emulator is installed."
+        },
+        "oniro.emulatorUrl": {
+          "type": "string",
+          "default": "https://github.com/eclipse-oniro4openharmony/device_board_oniro/releases/latest/download/oniro_emulator.zip",
+          "description": "Download URL for the Oniro emulator archive."
         },
         "oniro.hapPath": {
           "type": "string",
@@ -186,6 +204,7 @@
     "extract-zip": "^2.0.1",
     "follow-redirects": "^1.15.9",
     "json5": "^2.2.3",
-    "tar": "^7.4.3"
+    "tar": "^7.4.3",
+    "unzipper": "^0.10.14"
   }
 }

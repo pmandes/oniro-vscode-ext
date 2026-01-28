@@ -54,7 +54,7 @@ async function detectProcessIdAndShowHilog(token?: vscode.CancellationToken, pro
 		throw err;
 	}
 	
-	if (token?.isCancellationRequested) return;
+	if (token?.isCancellationRequested) {return;}
 	
 	// Open HiLog viewer and start logging using the main command, passing processId and severity
 	vscode.commands.executeCommand('oniro-ide.showHilogViewer', { processId: pid, severity: 'INFO' });
@@ -139,22 +139,22 @@ export function activate(context: vscode.ExtensionContext) {
 			try {
 				progress.report({ message: 'Starting emulator...' });
 				await startEmulator();
-				if (token.isCancellationRequested) return;
+				if (token.isCancellationRequested) {return;}
 				progress.report({ message: 'Connecting to emulator...' });
 				await attemptHdcConnection();
-				if (token.isCancellationRequested) return;
+				if (token.isCancellationRequested) {return;}
 				progress.report({ message: 'Waiting for emulator to boot...' });
 				await new Promise(resolve => setTimeout(resolve, 10000));
-				if (token.isCancellationRequested) return;
+				if (token.isCancellationRequested) {return;}
 				progress.report({ message: 'Building app...' });
 				await onirobuilderBuild();
-				if (token.isCancellationRequested) return;
+				if (token.isCancellationRequested) {return;}
 				progress.report({ message: 'Installing app...' });
 				await installApp();
-				if (token.isCancellationRequested) return;
+				if (token.isCancellationRequested) {return;}
 				progress.report({ message: 'Launching app...' });
 				await launchApp();
-				if (token.isCancellationRequested) return;
+				if (token.isCancellationRequested) {return;}
 
 				// Detect process ID and open HiLog viewer
 				await detectProcessIdAndShowHilog(token, progress);

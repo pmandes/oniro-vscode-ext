@@ -108,7 +108,7 @@ function parseLogLine(line: string): {
 	// Example: 05-19 22:35:37.818  3687  3712 E C01406/OHOS::RS: QueryEglBufferAge: eglQuerySurface is failed
 	const regex = /^(\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\s+(\d+)\s+(\d+)\s+([EWID])\s+([^:]+):\s*(.*)$/;
 	const match = line.match(regex);
-	if (!match) return null;
+	if (!match) {return null;}
 	return {
 		time: match[1],
 		pid: match[2],
