@@ -2,11 +2,12 @@ import { exec } from 'child_process';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { oniroLogChannel } from './logger';
 import { getEmulatorDir, getHdcPath } from './sdkUtils';
 
 const emulatorChannel = oniroLogChannel;
-const PID_FILE = '/tmp/oniro_emulator.pid';
+const PID_FILE = path.join(os.tmpdir(), 'oniro_emulator.pid');
 
 /**
  * Execute a shell command and log output.
@@ -14,8 +15,8 @@ const PID_FILE = '/tmp/oniro_emulator.pid';
 function execPromise(cmd: string, cwd?: string): Promise<void> {
   return new Promise((resolve, reject) => {
     exec(cmd, { cwd }, (error, stdout, stderr) => {
-      if (stdout?.trim()) emulatorChannel.appendLine(`[emulator] stdout: ${stdout.trim()}`);
-      if (stderr?.trim()) emulatorChannel.appendLine(`[emulator] stderr: ${stderr.trim()}`);
+      if (stdout?.trim()) {emulatorChannel.appendLine(`[emulator] stdout: ${stdout.trim()}`);}
+      if (stderr?.trim()) {emulatorChannel.appendLine(`[emulator] stderr: ${stderr.trim()}`);}
       if (error) {
         emulatorChannel.appendLine(`ERROR: [emulator] error: ${error.message}`);
         reject(error);
@@ -52,10 +53,33 @@ export async function attemptHdcConnection(address: string = '127.0.0.1:55555'):
   }
 }
 
+
+function getRunCommand(imagesPath: string): { cmd: string; cwd: string; usePid: boolean } {
+  const runSh = path.join(imagesPath, 'run.sh');
+  const runBat = path.join(imagesPath, 'run.bat');
+  if (process.platform === 'win32') {
+    if (fs.existsSync(runBat)) {
+      return { cmd: `cmd /c start "" /B "${runBat}"`, cwd: imagesPath, usePid: false };
+    }
+    if (fs.existsSync(runSh)) {
+      return { cmd: runSh, cwd: imagesPath, usePid: false };
+    }
+    throw new Error('Emulator run script not found (run.bat or run.sh).');
+  }
+  if (fs.existsSync(runSh)) {
+    return { cmd: `./run.sh`, cwd: imagesPath, usePid: true };
+  }
+  if (fs.existsSync(runBat)) {
+    return { cmd: `./run.bat`, cwd: imagesPath, usePid: true };
+  }
+  throw new Error('Emulator run script not found (run.sh or run.bat).');
+}
+
 export async function startEmulator(): Promise<void> {
   // Check if qemu-system-x86_64 is available
+  const qemuCheckCmd = process.platform === 'win32' ? 'where qemu-system-x86_64' : 'which qemu-system-x86_64';
   const qemuAvailable = await new Promise<boolean>((resolve) => {
-    exec('which qemu-system-x86_64', (error, stdout) => {
+    exec(qemuCheckCmd, (error, stdout) => {
       if (error || !stdout.trim()) {
         emulatorChannel.appendLine('ERROR: qemu-system-x86_64 not found in PATH.');
         resolve(false);
@@ -69,7 +93,7 @@ export async function startEmulator(): Promise<void> {
   }
 
   // Check if emulator is already running
-  if (fs.existsSync(PID_FILE)) {
+  if (process.platform !== 'win32' && fs.existsSync(PID_FILE)) {
     try {
       const pid = fs.readFileSync(PID_FILE, 'utf8').trim();
       if (pid && !isNaN(Number(pid))) {
@@ -87,11 +111,17 @@ export async function startEmulator(): Promise<void> {
       emulatorChannel.appendLine(`WARNING: Could not read PID file: ${(err as Error).message}`);
     }
   }
-  // Start emulator in background and store PID
+  // Start emulator in background and store PID when supported
   const emulatorImagesPath = path.join(getEmulatorDir(), 'images');
   try {
-    await execPromise(`(./run.sh > /dev/null 2>&1 & echo $! > ${PID_FILE})`, emulatorImagesPath);
-    emulatorChannel.appendLine(`Emulator started in background. PID stored in ${PID_FILE}`);
+    const runInfo = getRunCommand(emulatorImagesPath);
+    if (runInfo.usePid) {
+      await execPromise(`(${runInfo.cmd} > /dev/null 2>&1 & echo $! > ${PID_FILE})`, emulatorImagesPath);
+      emulatorChannel.appendLine(`Emulator started in background. PID stored in ${PID_FILE}`);
+    } else {
+      await execPromise(runInfo.cmd, emulatorImagesPath);
+      emulatorChannel.appendLine(`Emulator started.`);
+    }
   } catch (err) {
     emulatorChannel.appendLine(`ERROR: Failed to start emulator: ${(err as Error).message}`);
     throw new Error('Failed to start emulator.');
@@ -122,8 +152,13 @@ export async function startEmulator(): Promise<void> {
 export function stopEmulator(): Promise<void> {
   return new Promise(async (resolve, reject) => {
     try {
-      await execPromise('pkill -f qemu-system-x86_64');
-      emulatorChannel.appendLine('All qemu-system-x86_64 processes killed.');
+      if (process.platform === 'win32') {
+        await execPromise('taskkill /IM qemu-system-x86_64.exe /F');
+        emulatorChannel.appendLine('All qemu-system-x86_64.exe processes killed.');
+      } else {
+        await execPromise('pkill -f qemu-system-x86_64');
+        emulatorChannel.appendLine('All qemu-system-x86_64 processes killed.');
+      }
       // Remove the PID file if it exists
       fs.unlink(PID_FILE, (unlinkErr) => {
         if (unlinkErr && unlinkErr.code !== 'ENOENT') {

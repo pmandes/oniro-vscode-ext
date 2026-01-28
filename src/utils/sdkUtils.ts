@@ -11,6 +11,121 @@ import extractZip from 'extract-zip';
 import { oniroLogChannel } from '../utils/logger';
 import * as vscode from 'vscode';
 
+// ZIP extraction with progress using node-stream-zip (lazy require to avoid hard dependency at runtime until used)
+async function extractZipWithProgress(zipPath: string, dest: string, progress?: vscode.Progress<{message?: string, increment?: number}>): Promise<void> {
+    // require here to avoid import-time errors if module not installed
+    // node-stream-zip provides an async API via .async
+        // use `unzipper` to iterate entries and report progress
+        const unzipper = require('unzipper');
+        const dir = await unzipper.Open.file(zipPath);
+        const files = dir.files || [];
+        const total = files.length || 1;
+        let processed = 0;
+        let lastPercent = 0;
+        await fs.promises.mkdir(dest, { recursive: true });
+        for (const file of files) {
+            const entryName = file.path as string;
+            const targetPath = path.join(dest, entryName);
+            if (file.type === 'Directory') {
+                await fs.promises.mkdir(targetPath, { recursive: true });
+            } else {
+                await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
+                const readStream = file.stream();
+                const writeStream = fs.createWriteStream(targetPath);
+                await pipelineAsync(readStream as any, writeStream);
+            }
+            processed++;
+            if (progress) {
+                const percent = Math.min(100, Math.round((processed / total) * 100));
+                const inc = percent - lastPercent;
+                if (inc > 0) {
+                    progress.report?.({ message: `Extracting: ${percent}%`, increment: inc });
+                    lastPercent = percent;
+                } else {
+                    progress.report?.({ message: `Extracting: ${percent}%`, increment: 0 });
+                }
+            }
+        }
+}
+
+/**
+ * Prompts the user to select a ZIP file and installs the command line tools from it.
+ * Used when no download URL is configured for Windows/Mac.
+ */
+export async function manualInstallCmdTools(progress?: vscode.Progress<{message?: string, increment?: number}>, abortSignal?: AbortSignal): Promise<void> {
+    // Prompt for ZIP file
+    vscode.window.showInformationMessage('No download URL is configured for command line tools on this OS. Please download the ZIP manually and select it for installation.');
+    const uris = await vscode.window.showOpenDialog({
+        canSelectFiles: true,
+        canSelectFolders: false,
+        canSelectMany: false,
+        openLabel: 'Select ZIP file',
+        filters: { 'ZIP files': ['zip'] }
+    });
+    if (!uris || uris.length === 0) {
+        throw new Error('No ZIP file selected.');
+    }
+    const zipPath = uris[0].fsPath;
+
+    // Internal worker to perform extraction and installation using provided progress
+    const doInstall = async (p?: vscode.Progress<{message?: string, increment?: number}>, signal?: AbortSignal) => {
+        const CMD_PATH = getCmdToolsPath();
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'oniro-cmdtools-'));
+        const extractPath = path.join(tmpDir, 'oh-command-line-tools');
+        try {
+            if (p) { p.report?.({ message: 'Extracting tools...', increment: 0 }); }
+            await extractZipWithProgress(zipPath, extractPath, p);
+            if (signal?.aborted) { throw new Error('Download cancelled'); }
+            fs.mkdirSync(CMD_PATH, { recursive: true });
+            const srcDir = findCmdToolsSourceDir(extractPath);
+            for (const entry of fs.readdirSync(srcDir)) {
+                if (signal?.aborted) { throw new Error('Download cancelled'); }
+                const src = path.join(srcDir, entry);
+                const dest = path.join(CMD_PATH, entry);
+                if (fs.statSync(src).isDirectory()) {
+                    if (fs.existsSync(dest)) { fs.rmSync(dest, { recursive: true, force: true }); }
+                    fs.renameSync(src, dest);
+                } else {
+                    fs.copyFileSync(src, dest);
+                }
+            }
+            const binDir = path.join(CMD_PATH, 'bin');
+            if (fs.existsSync(binDir) && os.platform() !== 'win32') {
+                for (const file of fs.readdirSync(binDir)) {
+                    fs.chmodSync(path.join(binDir, file), 0o755);
+                }
+            }
+            if (p) { p.report?.({ message: 'Cleaning up...', increment: 0 }); }
+            fs.rmSync(tmpDir, { recursive: true, force: true });
+        } catch (err) {
+            fs.rmSync(tmpDir, { recursive: true, force: true });
+            throw err;
+        }
+    };
+
+    // If caller provided a progress object (e.g. sdkManager.withProgress), use it.
+    if (progress) {
+        await doInstall(progress, abortSignal);
+        return;
+    }
+
+    // Otherwise show our own progress notification so user sees extraction progress.
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: 'Installing OpenHarmony Command Line Tools',
+        cancellable: true
+    }, async (p, token) => {
+        const controller = new AbortController();
+        token.onCancellationRequested(() => controller.abort());
+        await doInstall(p, controller.signal);
+    });
+
+    // After successful manual install show information and try to open/refresh SDK Manager
+    vscode.window.showInformationMessage(`Command line tools installed to: ${getCmdToolsPath()}`);
+    // Try to open SDK Manager so the UI reflects the new installation; if already open, this will focus it.
+    try { await vscode.commands.executeCommand('oniro-ide.openSdkManager'); } catch (_) {}
+}
+
 export interface SdkInfo {
     version: string;
     api: string;
@@ -47,9 +162,9 @@ function getOniroConfig<T = string>(key: string, fallback: T): T {
 // Determine OS folder for SDK path
 function getOsFolder(): string {
   const platform = os.platform();
-  if (platform === 'linux') return 'linux';
-  if (platform === 'darwin') return 'darwin';
-  if (platform === 'win32') return 'windows';
+    if (platform === 'linux') { return 'linux'; }
+    if (platform === 'darwin') { return 'darwin'; }
+    if (platform === 'win32') { return 'windows'; }
   throw new Error('Unsupported OS');
 }
 
@@ -65,14 +180,40 @@ export function getCmdToolsPath(): string {
     return getOniroConfig('cmdToolsPath', path.join(os.homedir(), 'command-line-tools'));
 }
 
+function getExistingFilePath(candidates: string[]): string {
+    for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) { return candidate; }
+    }
+    return candidates[0];
+}
+
 export function getCmdToolsBin(): string {
-    return path.join(getCmdToolsPath(), 'bin', 'ohpm');
+    const binDir = path.join(getCmdToolsPath(), 'bin');
+    const platform = os.platform();
+    if (platform === 'win32') {
+        return getExistingFilePath([
+            path.join(binDir, 'ohpm.exe'),
+            path.join(binDir, 'ohpm.cmd'),
+            path.join(binDir, 'ohpm.bat'),
+            path.join(binDir, 'ohpm')
+        ]);
+    }
+    return path.join(binDir, 'ohpm');
 }
 
 // Helper to get the full hdc executable path
 export function getHdcPath(): string {
-  // hdc is located in ./sdk/default/openharmony/toolchains/hdc relative to getCmdToolsPath()
-  return path.join(getCmdToolsPath(), 'sdk', 'default', 'openharmony', 'toolchains', 'hdc');
+    // hdc is located in ./sdk/default/openharmony/toolchains/hdc relative to getCmdToolsPath()
+    const base = path.join(getCmdToolsPath(), 'sdk', 'default', 'openharmony', 'toolchains');
+    if (os.platform() === 'win32') {
+        return getExistingFilePath([
+            path.join(base, 'hdc.exe'),
+            path.join(base, 'hdc.bat'),
+            path.join(base, 'hdc.cmd'),
+            path.join(base, 'hdc')
+        ]);
+    }
+    return path.join(base, 'hdc');
 }
 
 export const ALL_SDKS = [
@@ -89,13 +230,13 @@ export const ALL_SDKS = [
 export function getInstalledSdks(): string[] {
     const sdkRoot = getSdkRootDir();
     const versions = new Set<string>();
-    if (!fs.existsSync(sdkRoot)) return [];
+    if (!fs.existsSync(sdkRoot)) { return []; }
     for (const osFolder of ['linux', 'darwin', 'windows']) {
         const osPath = path.join(sdkRoot, osFolder);
-        if (!fs.existsSync(osPath) || !fs.statSync(osPath).isDirectory()) continue;
+        if (!fs.existsSync(osPath) || !fs.statSync(osPath).isDirectory()) { continue; }
         for (const api of fs.readdirSync(osPath)) {
             const apiPath = path.join(osPath, api);
-            if (!fs.statSync(apiPath).isDirectory()) continue;
+            if (!fs.statSync(apiPath).isDirectory()) { continue; }
             versions.add(api);
         }
     }
@@ -109,6 +250,24 @@ export function isCmdToolsInstalled(): boolean {
 
 export function getCmdToolsStatus(): { installed: boolean, status: string } {
     if (isCmdToolsInstalled()) {
+        // Prefer reading explicit version.txt '# Version: x.y.z' if present
+        try {
+            const versionFile = path.join(getCmdToolsPath(), 'version.txt');
+            if (fs.existsSync(versionFile)) {
+                const content = fs.readFileSync(versionFile, 'utf8');
+                const lines = content.split(/\r?\n/);
+                for (const line of lines) {
+                    const m = line.match(/^\s*#\s*Version:\s*(.+)$/);
+                    if (m && m[1]) {
+                        const ver = m[1].trim();
+                        return { installed: true, status: `Installed (${ver})` };
+                    }
+                }
+            }
+        } catch (e) {
+            // ignore and continue to try executing the binary
+        }
+
         try {
             const version = require('child_process').execFileSync(getCmdToolsBin(), ['-v'], { encoding: 'utf8' }).trim();
             return { installed: true, status: `Installed (${version})` };
@@ -223,15 +382,15 @@ export async function downloadAndInstallSdk(version: string, api: string, progre
     const sdkInstallDir = path.join(getSdkRootDir(), osFolder, api);
     fs.mkdirSync(path.dirname(sdkInstallDir), { recursive: true });
     try {
-        if (progress) progress.report?.({ message: 'Downloading SDK archive...', increment: 0 });
+        if (progress) { progress.report?.({ message: 'Downloading SDK archive...', increment: 0 }); }
         await downloadFile(downloadUrl, tarPath, progress, abortSignal);
-        if (progress) progress.report?.({ message: 'Downloading checksum...', increment: 0 });
+        if (progress) { progress.report?.({ message: 'Downloading checksum...', increment: 0 }); }
         await downloadFile(sha256Url, sha256Path, progress, abortSignal);
-        if (progress) progress.report?.({ message: 'Verifying checksum...', increment: 0 });
+        if (progress) { progress.report?.({ message: 'Verifying checksum...', increment: 0 }); }
         await verifySha256(tarPath, sha256Path);
-        if (progress) progress.report?.({ message: 'Extracting SDK (this may take a while)...', increment: 0 });
+        if (progress) { progress.report?.({ message: 'Extracting SDK (this may take a while)...', increment: 0 }); }
         await extractTarball(tarPath, extractDir, strip);
-        if (progress) progress.report?.({ message: 'Extracting SDK components (this may take a while)...', increment: 0 });
+        if (progress) { progress.report?.({ message: 'Extracting SDK components (this may take a while)...', increment: 0 }); }
         const osContentPath = path.join(extractDir, osFolder);
         const zipFiles = fs.readdirSync(osContentPath).filter(name => name.endsWith('.zip'));
         for (const zipFile of zipFiles) {
@@ -240,14 +399,14 @@ export async function downloadAndInstallSdk(version: string, api: string, progre
             await extractZip(zipPath, { dir: osContentPath });
             fs.unlinkSync(zipPath);
         }
-        if (progress) progress.report?.({ message: 'Finalizing installation...', increment: 0 });
+        if (progress) { progress.report?.({ message: 'Finalizing installation...', increment: 0 }); }
         const osPath = path.join(extractDir, osFolder);
         if (!fs.existsSync(osPath)) {
             throw new Error(`Expected folder '${osFolder}' not found in extracted SDK. Extraction may have failed or the archive structure is unexpected.`);
         }
-        if (fs.existsSync(sdkInstallDir)) fs.rmSync(sdkInstallDir, { recursive: true, force: true });
+        if (fs.existsSync(sdkInstallDir)) { fs.rmSync(sdkInstallDir, { recursive: true, force: true }); }
         fs.renameSync(osPath, sdkInstallDir);
-        if (progress) progress.report?.({ message: 'Cleaning up...', increment: 0 });
+        if (progress) { progress.report?.({ message: 'Cleaning up...', increment: 0 }); }
         fs.rmSync(tmpDir, { recursive: true, force: true });
     } catch (err) {
         oniroLogChannel.appendLine(`[SDK] ERROR: ${err instanceof Error ? err.message : String(err)}`);
@@ -256,36 +415,81 @@ export async function downloadAndInstallSdk(version: string, api: string, progre
     }
 }
 
+function getCmdToolsDownloadUrl(): string {
+    const config = vscode.workspace.getConfiguration('oniro');
+    const platform = os.platform();
+    if (platform === 'linux') {
+        return config.get<string>('cmdToolsUrlLinux')
+            || 'https://repo.huaweicloud.com/harmonyos/ohpm/5.1.0/commandline-tools-linux-x64-5.1.0.840.zip';
+    }
+    if (platform === 'win32') {
+        const url = config.get<string>('cmdToolsUrlWindows');
+        if (url) { return url; }
+        throw new Error('Command line tools URL for Windows is not configured. Set oniro.cmdToolsUrlWindows.');
+    }
+    if (platform === 'darwin') {
+        const url = config.get<string>('cmdToolsUrlMac');
+        if (url) { return url; }
+        throw new Error('Command line tools URL for macOS is not configured. Set oniro.cmdToolsUrlMac.');
+    }
+    throw new Error('Unsupported OS for command line tools.');
+}
+
+function findCmdToolsSourceDir(extractPath: string): string {
+    const known = [
+        path.join(extractPath, 'command-line-tools'),
+        path.join(extractPath, 'oh-command-line-tools'),
+        path.join(extractPath, 'commandline-tools')
+    ];
+    for (const candidate of known) {
+        if (fs.existsSync(candidate)) { return candidate; }
+    }
+    const entries = fs.readdirSync(extractPath, { withFileTypes: true })
+        .filter(e => e.isDirectory())
+        .map(e => path.join(extractPath, e.name));
+    for (const dir of entries) {
+        if (fs.existsSync(path.join(dir, 'bin'))) { return dir; }
+    }
+    throw new Error('Could not locate command line tools folder in the extracted archive.');
+}
+
 export async function installCmdTools(progress?: vscode.Progress<{message?: string, increment?: number}>, abortSignal?: AbortSignal): Promise<void> {
     const CMD_PATH = getCmdToolsPath();
-    const url = 'https://repo.huaweicloud.com/harmonyos/ohpm/5.1.0/commandline-tools-linux-x64-5.1.0.840.zip';
+    let url: string | undefined;
+    try {
+        url = getCmdToolsDownloadUrl();
+    } catch (e) {
+        // No URL configured for this OS, fall back to manual install
+        await manualInstallCmdTools(progress, abortSignal);
+        return;
+    }
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'oniro-cmdtools-'));
     const zipPath = path.join(tmpDir, 'oh-command-line-tools.zip');
     const extractPath = path.join(tmpDir, 'oh-command-line-tools');
     try {
-        if (progress) progress.report?.({ message: 'Downloading command line tools...', increment: 0 });
+        if (progress) { progress.report?.({ message: 'Downloading command line tools...', increment: 0 }); }
         await downloadFile(url, zipPath, progress, abortSignal);
-        if (progress) progress.report?.({ message: 'Extracting tools...', increment: 0 });
-        await extractZip(zipPath, { dir: extractPath });
+        if (progress) { progress.report?.({ message: 'Extracting tools...', increment: 0 }); }
+        await extractZipWithProgress(zipPath, extractPath, progress);
         fs.mkdirSync(CMD_PATH, { recursive: true });
-        const srcDir = path.join(extractPath, 'command-line-tools');
+        const srcDir = findCmdToolsSourceDir(extractPath);
         for (const entry of fs.readdirSync(srcDir)) {
             const src = path.join(srcDir, entry);
             const dest = path.join(CMD_PATH, entry);
             if (fs.statSync(src).isDirectory()) {
-                if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true, force: true });
+                if (fs.existsSync(dest)) { fs.rmSync(dest, { recursive: true, force: true }); }
                 fs.renameSync(src, dest);
             } else {
                 fs.copyFileSync(src, dest);
             }
         }
         const binDir = path.join(CMD_PATH, 'bin');
-        if (fs.existsSync(binDir)) {
+        if (fs.existsSync(binDir) && os.platform() !== 'win32') {
             for (const file of fs.readdirSync(binDir)) {
                 fs.chmodSync(path.join(binDir, file), 0o755);
             }
         }
-        if (progress) progress.report?.({ message: 'Cleaning up...', increment: 0 });
+        if (progress) { progress.report?.({ message: 'Cleaning up...', increment: 0 }); }
         fs.rmSync(tmpDir, { recursive: true, force: true });
     } catch (err) {
         fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -336,21 +540,24 @@ export async function installEmulator(
     progress?: vscode.Progress<{message?: string, increment?: number}>,
     abortSignal?: AbortSignal
 ): Promise<void> {
-    const EMULATOR_URL = "https://github.com/eclipse-oniro4openharmony/device_board_oniro/releases/latest/download/oniro_emulator.zip";
+    const EMULATOR_URL = getOniroConfig(
+        'emulatorUrl',
+        'https://github.com/eclipse-oniro4openharmony/device_board_oniro/releases/latest/download/oniro_emulator.zip'
+    );
     const EMULATOR_DIR = getEmulatorDir();
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'oniro-emulator-'));
     const tmpZip = path.join(tmpDir, 'oniro_emulator.zip');
     try {
         fs.mkdirSync(EMULATOR_DIR, { recursive: true });
-        if (progress) progress.report?.({ message: 'Downloading emulator...', increment: 0 });
+        if (progress) { progress.report?.({ message: 'Downloading emulator...', increment: 0 }); }
         await downloadFile(EMULATOR_URL, tmpZip, progress, abortSignal);
-        if (progress) progress.report?.({ message: 'Extracting emulator...', increment: 0 });
-        await extractZip(tmpZip, { dir: EMULATOR_DIR });
+        if (progress) { progress.report?.({ message: 'Extracting emulator...', increment: 0 }); }
+        await extractZipWithProgress(tmpZip, EMULATOR_DIR, progress);
         const runSh = path.join(EMULATOR_DIR, 'images', 'run.sh');
         if (fs.existsSync(runSh)) {
             fs.chmodSync(runSh, 0o755);
         }
-        if (progress) progress.report?.({ message: 'Cleaning up...', increment: 0 });
+        if (progress) { progress.report?.({ message: 'Cleaning up...', increment: 0 }); }
         fs.rmSync(tmpDir, { recursive: true, force: true });
     } catch (err) {
         fs.rmSync(tmpDir, { recursive: true, force: true });

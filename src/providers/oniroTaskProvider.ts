@@ -5,11 +5,18 @@ import { getOhosBaseSdkHome, getCmdToolsPath } from '../utils/sdkUtils';
 
 function getHvigorwPath(projectDir: string): string {
   const cmdToolsBin = path.join(getCmdToolsPath(), 'bin');
-  let hvigorwPath = path.join(projectDir, 'hvigorw');
-  if (!fs.existsSync(hvigorwPath)) {
-    hvigorwPath = path.join(cmdToolsBin, 'hvigorw');
+  const candidates = [
+    path.join(projectDir, 'hvigorw'),
+    path.join(projectDir, 'hvigorw.bat'),
+    path.join(projectDir, 'hvigorw.cmd'),
+    path.join(cmdToolsBin, 'hvigorw'),
+    path.join(cmdToolsBin, 'hvigorw.bat'),
+    path.join(cmdToolsBin, 'hvigorw.cmd')
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {return candidate;}
   }
-  return hvigorwPath;
+  return candidates[0];
 }
 
 export class OniroTaskProvider implements vscode.TaskProvider {
@@ -17,7 +24,7 @@ export class OniroTaskProvider implements vscode.TaskProvider {
 
   provideTasks(): vscode.Task[] {
     const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (!workspaceFolders || workspaceFolders.length === 0) return [];
+    if (!workspaceFolders || workspaceFolders.length === 0) {return [];}
     const projectDir = workspaceFolders[0].uri.fsPath;
     const env = { ...process.env, OHOS_BASE_SDK_HOME: getOhosBaseSdkHome() };
     const hvigorwPath = getHvigorwPath(projectDir);

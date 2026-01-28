@@ -10,8 +10,8 @@ const hdcChannel = oniroLogChannel;
 function execPromise(cmd: string): Promise<void> {
   return new Promise((resolve, reject) => {
     exec(cmd, (error, stdout, stderr) => {
-      if (stdout) hdcChannel.appendLine(`[hdc] stdout: ${stdout.trim()}`);
-      if (stderr) hdcChannel.appendLine(`[hdc] stderr: ${stderr.trim()}`);
+      if (stdout) {hdcChannel.appendLine(`[hdc] stdout: ${stdout.trim()}`);}
+      if (stderr) {hdcChannel.appendLine(`[hdc] stderr: ${stderr.trim()}`);}
       if (error) {
         hdcChannel.appendLine(`ERROR: [hdc] error: ${error.message}`);
         reject(error);

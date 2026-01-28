@@ -114,7 +114,7 @@ const messageHandlers: MessageHandler = {
     },
 
     async installCmdTools(message, context) {
-        if (context.currentAbortController) context.currentAbortController.abort();
+        if (context.currentAbortController) {context.currentAbortController.abort();}
         context.currentAbortController = new AbortController();
         
         try {
@@ -153,7 +153,7 @@ const messageHandlers: MessageHandler = {
     },
 
     async installEmulator(message, context) {
-        if (context.currentAbortController) context.currentAbortController.abort();
+        if (context.currentAbortController) {context.currentAbortController.abort();}
         context.currentAbortController = new AbortController();
         
         try {
