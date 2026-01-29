@@ -96,8 +96,7 @@ This extension contributes the following settings (see VS Code settings for deta
 
 ## Known Issues
 
-- The commands are developed and verified only for the Linux environments
-- Please report issues and feature requests via the GitHub repository.
+Please report issues and feature requests via the GitHub repository.
 
 ## Suggested `launch.json` Configuration
 
@@ -121,11 +120,6 @@ This will let you use F5 or the "Run" button in VS Code to trigger the Oniro "Ru
 ## ArkTS Language Integration
 
 For additional integration for the ArkTS language, use the [ArkTS VS Code plugin](https://github.com/Groupguanfang/arkTS), which supports source code navigation and completion. It also supports codelinter to detect errors.
-
-## Release Notes
-
-### 0.0.1
-Initial release: Oniro Tree View, build/sign/deploy workflow, emulator management, SDK Manager, HiLog Viewer, and debugging support.
 
 ## For more information
 - [Oniro Project](https://oniroproject.org/)
