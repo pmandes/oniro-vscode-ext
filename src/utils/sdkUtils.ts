@@ -50,9 +50,25 @@ async function extractZipWithProgress(
     // Ensure the destination directory exists
     await fs.promises.mkdir(dest, { recursive: true });
 
+    const destRoot = path.resolve(dest);
+
+    // Prevent Zip Slip (path traversal) by ensuring every extracted path stays within destRoot
+    const safeResolveTarget = (entryName: string): string => {
+        const resolved = path.resolve(destRoot, entryName);
+        const rel = path.relative(destRoot, resolved);
+
+        // rel can be '' (root) or a normal relative path; reject anything escaping destRoot
+        if (rel.startsWith('..') || path.isAbsolute(rel)) {
+            throw new Error(`Blocked ZIP entry with illegal path: ${entryName}`);
+        }
+
+        return resolved;
+    };
+    
+    // Process each file entry in the ZIP
     for (const file of files) {
         const entryName = file.path as string;
-        const targetPath = path.join(dest, entryName);
+        const targetPath = safeResolveTarget(entryName);
 
         if (file.type === 'Directory') {
             // Create directory if the entry is a directory
