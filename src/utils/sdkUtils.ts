@@ -7,7 +7,6 @@ import { pipeline } from 'stream';
 import { promisify } from 'util';
 import * as crypto from 'crypto';
 import * as tar from 'tar';
-import extractZip from 'extract-zip';
 import { oniroLogChannel } from '../utils/logger';
 import * as vscode from 'vscode';
 
@@ -21,12 +20,16 @@ import * as vscode from 'vscode';
  * @param zipPath The path to the ZIP archive to extract.
  * @param dest The destination directory where files will be extracted.
  * @param progress (Optional) VS Code progress object for reporting extraction progress.
+ * @param start (Optional) Overall progress start offset (0..100). Default: 0.
+ * @param range (Optional) Overall progress range to consume (0..100). Default: 100.
  * @returns A Promise that resolves when extraction is complete.
  */
 async function extractZipWithProgress(
     zipPath: string,
     dest: string,
-    progress?: vscode.Progress<{message?: string, increment?: number}>
+    progress?: vscode.Progress<{message?: string, increment?: number}>,
+    start: number = 0,
+    range: number = 100
 ): Promise<void> {
 
     // Lazy require to avoid import-time errors if module is not installed
@@ -37,8 +40,12 @@ async function extractZipWithProgress(
     const files = dir.files || [];
     const total = files.length || 1;
 
+    // Clamp progress budget to sane bounds
+    const s = Math.max(0, Math.min(100, start));
+    const r = Math.max(0, Math.min(100 - s, range));
+
     let processed = 0;
-    let lastPercent = 0;
+    let lastOverall = Math.round(s);
 
     // Ensure the destination directory exists
     await fs.promises.mkdir(dest, { recursive: true });
@@ -76,15 +83,25 @@ async function extractZipWithProgress(
 
         // Report extraction progress if a progress object is provided
         if (progress) {
-            const percent = Math.min(100, Math.round((processed / total) * 100));
-            const inc = percent - lastPercent;
+
+            const localPercent = Math.min(100, Math.round((processed / total) * 100));
+            const overall = Math.min(100, Math.round(s + (processed / total) * r));
+            const inc = overall - lastOverall;
+
             if (inc > 0) {
-                progress.report?.({ message: `Extracting: ${percent}%`, increment: inc });
-                lastPercent = percent;
+                progress.report?.({ message: `Extracting: ${localPercent}%`, increment: inc });
+                lastOverall = overall;
             } else {
-                progress.report?.({ message: `Extracting: ${percent}%`, increment: 0 });
+                progress.report?.({ message: `Extracting: ${localPercent}%`, increment: 0 });
             }
         }
+    }
+
+    // Ensure we finish exactly at the end of our allocated range.
+    if (progress) {
+        const endOverall = Math.min(100, Math.round(s + r));
+        const inc = endOverall - lastOverall;
+        if (inc > 0) { progress.report?.({ message: `Extracting: 100%`, increment: inc }); }
     }
 }
 
@@ -333,7 +350,6 @@ export function getCmdToolsBin(): string {
     return path.join(binDir, 'ohpm');
 }
 
-// Helper to get the full hdc executable path
 /**
  * Return the full path to the `hdc` executable inside the command tools tree.
  *
@@ -399,7 +415,6 @@ export function getInstalledSdks(): string[] {
 
     return ALL_SDKS.filter(sdk => versions.has(sdk.api)).map(sdk => sdk.version);
 }
-
 
 /**
  * Check whether the command-line tools are installed.
@@ -469,17 +484,38 @@ const pipelineAsync = promisify(pipeline);
  * @param dest Local filesystem path where the downloaded file will be written.
  * @param progress Optional VS Code progress reporter used to display % progress.
  * @param abortSignal Optional AbortSignal to cancel the download.
+ * @param start (Optional) Overall progress start offset (0..100). Default: 0.
++  @param range (Optional) Overall progress range to consume (0..100). Default: 100.
  * @returns A promise that resolves when the file is fully written.
  * @throws Error If the server responds with a non-200 status or if the
  *         download is cancelled or fails.
  */
-export async function downloadFile(url: string, dest: string, progress?: vscode.Progress<{message?: string, increment?: number}>, abortSignal?: AbortSignal): Promise<void> {
+export async function downloadFile(
+    url: string,
+    dest: string,
+    progress?: vscode.Progress<{message?: string, increment?: number}>,
+    abortSignal?: AbortSignal,
+    start: number = 0,
+    range: number = 100
+): Promise<void> {
+
     const proto = url.startsWith('https') ? https : http;
     
     return new Promise((resolve, reject) => {
        
+        // Clamp progress budget to sane bounds
+        const s = Math.max(0, Math.min(100, start));
+        const r = Math.max(0, Math.min(100 - s, range));
+
+        let settled = false;
+        const done = (err?: any) => {
+            if (settled) { return; }
+            settled = true;
+            err ? reject(err) : resolve();
+        };
+
         if (abortSignal?.aborted) {
-            reject(new Error('Download cancelled'));
+            done(new Error('Download cancelled'));
             return;
         }
 
@@ -488,45 +524,70 @@ export async function downloadFile(url: string, dest: string, progress?: vscode.
             
             if (response.statusCode !== 200) {
                 oniroLogChannel.appendLine(`[SDK] Failed to get '${url}' (${response.statusCode})`);
-                reject(new Error(`Failed to get '${url}' (${response.statusCode})`));
+                
+                // Cleanup partially-created file
+                try { response.destroy(); } catch {}
+                try { file.close(); } catch {}
+                fs.unlink(dest, () => {});                
+                
+                done(new Error(`Failed to get '${url}' (${response.statusCode})`));
                 return;
             }
 
             const total = parseInt(response.headers['content-length'] || '0', 10);
             let downloaded = 0;
-            let lastPercent = 0;
+            let lastOverall = Math.round(s);
 
             response.on('data', chunk => {
+
                 downloaded += chunk.length;
+
                 if (progress && total) {
-                    const percent = Math.min(100, Math.round((downloaded / total) * 100));
-                    if (percent > lastPercent) {
-                        // @ts-ignore
-                        progress.report?.({ message: `Downloading: ${percent}%`, increment: percent - lastPercent });
-                        lastPercent = percent;
+
+                    const localPercent = Math.min(100, Math.round((downloaded / total) * 100));
+                    const overall = Math.min(100, Math.round(s + (downloaded / total) * r));
+                    const inc = overall - lastOverall;
+
+                    if (inc > 0) {
+                        progress.report?.({ message: `Downloading: ${localPercent}%`, increment: inc });
+                        lastOverall = overall;
+                    } else {
+                        progress.report?.({ message: `Downloading: ${localPercent}%`, increment: 0 });
                     }
                 }
             });
 
             response.pipe(file);
-            file.on('finish', () => file.close((err) => err ? reject(err) : resolve()));
+
+            file.on('finish', () => {
+                // Ensure we finish exactly at the end of our allocated range.
+                if (progress) {
+                    const endOverall = Math.min(100, Math.round(s + r));
+                    const inc = endOverall - lastOverall;
+                    if (inc > 0) { progress.report?.({ message: `Downloading: 100%`, increment: inc }); }
+                }
+                file.close((err) => err ? done(err) : done());
+            });
             
             abortSignal?.addEventListener('abort', () => {
                 response.destroy();
                 file.close();
                 fs.unlink(dest, () => {});
-                reject(new Error('Download cancelled'));
+                done(new Error('Download cancelled'));
             });
 
         }).on('error', (err) => {
             oniroLogChannel.appendLine(`[SDK] Error downloading '${url}': ${err.message}`);
-            reject(err);
+            try { file.close(); } catch {}
+            fs.unlink(dest, () => {});
+            done(err);
         });
+
         abortSignal?.addEventListener('abort', () => {
             req.destroy();
             file.close();
             fs.unlink(dest, () => {});
-            reject(new Error('Download cancelled'));
+            done(new Error('Download cancelled'));
         });
     });
 }
@@ -633,54 +694,107 @@ export function getSdkFilename(version?: string): { filename: string, osFolder: 
  * @returns A promise that resolves when installation completes.
  * @throws Error If download, verification, extraction or installation fails.
  */
-export async function downloadAndInstallSdk(version: string, api: string, progress?: vscode.Progress<{message?: string, increment?: number}>, abortSignal?: AbortSignal): Promise<void> {
+export async function downloadAndInstallSdk(
+    version: string,
+    api: string,
+    progress?: vscode.Progress<{message?: string, increment?: number}>,
+    abortSignal?: AbortSignal
+): Promise<void> {
+
     const { filename, osFolder, strip } = getSdkFilename(version);
     const urlBase = 'https://repo.huaweicloud.com/openharmony/os';
     const downloadUrl = `${urlBase}/${version}-Release/${filename}`;
     const sha256Url = `${downloadUrl}.sha256`;
+
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'oniro-sdk-'));
     const tarPath = path.join(tmpDir, filename);
     const sha256Path = path.join(tmpDir, filename + '.sha256');
     const extractDir = path.join(tmpDir, 'extract');
-   
+
     fs.mkdirSync(extractDir);
+
     const sdkInstallDir = path.join(getSdkRootDir(), osFolder, api);
     fs.mkdirSync(path.dirname(sdkInstallDir), { recursive: true });
 
     try {
+        // Progress budget (overall 0..100)
+        // 0-35  : SDK archive download
+        // 35-45 : checksum download
+        // 45-50 : verify
+        // 50-60 : extract tarball
+        // 60-95 : extract component ZIPs
+        // 95-100: finalize + cleanup
+
         if (progress) { progress.report?.({ message: 'Downloading SDK archive...', increment: 0 }); }
-        await downloadFile(downloadUrl, tarPath, progress, abortSignal);
+        await downloadFile(downloadUrl, tarPath, progress, abortSignal, 0, 35);
+
         if (progress) { progress.report?.({ message: 'Downloading checksum...', increment: 0 }); }
-        await downloadFile(sha256Url, sha256Path, progress, abortSignal);
+        await downloadFile(sha256Url, sha256Path, progress, abortSignal, 35, 10);
+
         if (progress) { progress.report?.({ message: 'Verifying checksum...', increment: 0 }); }
         await verifySha256(tarPath, sha256Path);
+        if (progress) { progress.report?.({ message: 'Verifying checksum...', increment: 5 }); } // 45 -> 50
+
+        if (abortSignal?.aborted) { throw new Error('Download cancelled'); }
+
         if (progress) { progress.report?.({ message: 'Extracting SDK (this may take a while)...', increment: 0 }); }
         await extractTarball(tarPath, extractDir, strip);
-        if (progress) { progress.report?.({ message: 'Extracting SDK components (this may take a while)...', increment: 0 }); }
-        
+        if (progress) { progress.report?.({ message: 'Extracting SDK (this may take a while)...', increment: 10 }); } // 50 -> 60
+
+        if (abortSignal?.aborted) { throw new Error('Download cancelled'); }
+
         const osContentPath = path.join(extractDir, osFolder);
         const zipFiles = fs.readdirSync(osContentPath).filter(name => name.endsWith('.zip'));
-        
+
+        // Allocate 60..95 across all component ZIPs
+        const componentsStart = 60;
+        const componentsBudget = 35;
+        const n = zipFiles.length;
+
+        if (progress && n === 0) {
+            progress.report?.({ message: 'No SDK component ZIPs found.', increment: componentsBudget }); // 60 -> 95
+        } else if (progress) {
+            progress.report?.({ message: 'Extracting SDK components (this may take a while)...', increment: 0 });
+        }
+
+        const base = n > 0 ? Math.floor(componentsBudget / n) : 0;
+        let rem = n > 0 ? (componentsBudget % n) : 0;
+        let cursor = componentsStart;
+
         for (const zipFile of zipFiles) {
+            if (abortSignal?.aborted) { throw new Error('Download cancelled'); }
+
             oniroLogChannel.appendLine(`[SDK] Extracting component ${zipFile}`);
             const zipPath = path.join(osContentPath, zipFile);
-            await extractZip(zipPath, { dir: osContentPath });
+
+            const thisBudget = base + (rem > 0 ? 1 : 0);
+            if (rem > 0) { rem--; }
+
+            await extractZipWithProgress(zipPath, osContentPath, progress, cursor, thisBudget);
+            cursor += thisBudget;
+
             fs.unlinkSync(zipPath);
         }
 
         if (progress) { progress.report?.({ message: 'Finalizing installation...', increment: 0 }); }
-        
-        const osPath = path.join(extractDir, osFolder);
 
+        const osPath = path.join(extractDir, osFolder);
         if (!fs.existsSync(osPath)) {
-            throw new Error(`Expected folder '${osFolder}' not found in extracted SDK. Extraction may have failed or the archive structure is unexpected.`);
+            throw new Error(
+                `Expected folder '${osFolder}' not found in extracted SDK. Extraction may have failed or the archive structure is unexpected.`
+            );
         }
 
         if (fs.existsSync(sdkInstallDir)) { fs.rmSync(sdkInstallDir, { recursive: true, force: true }); }
         fs.renameSync(osPath, sdkInstallDir);
-        
+
+        if (progress) { progress.report?.({ message: 'Finalizing installation...', increment: 3 }); } // 95 -> 98
+
         if (progress) { progress.report?.({ message: 'Cleaning up...', increment: 0 }); }
         fs.rmSync(tmpDir, { recursive: true, force: true });
+
+        if (progress) { progress.report?.({ message: 'Cleaning up...', increment: 2 }); } // 98 -> 100
+
     } catch (err) {
         oniroLogChannel.appendLine(`[SDK] ERROR: ${err instanceof Error ? err.message : String(err)}`);
         fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -769,7 +883,11 @@ function findCmdToolsSourceDir(extractPath: string): string {
  * @returns A promise that resolves when installation is complete.
  * @throws Error When download, extraction or installation fails.
  */
-export async function installCmdTools(progress?: vscode.Progress<{message?: string, increment?: number}>, abortSignal?: AbortSignal): Promise<void> {
+export async function installCmdTools(
+    progress?: vscode.Progress<{message?: string, increment?: number}>,
+    abortSignal?: AbortSignal
+): Promise<void> {
+    
     const CMD_PATH = getCmdToolsPath();
     let url: string | undefined;
 
@@ -786,16 +904,20 @@ export async function installCmdTools(progress?: vscode.Progress<{message?: stri
     const extractPath = path.join(tmpDir, 'oh-command-line-tools');
 
     try {
+
         if (progress) { progress.report?.({ message: 'Downloading command line tools...', increment: 0 }); }
-        await downloadFile(url, zipPath, progress, abortSignal);
+        await downloadFile(url, zipPath, progress, abortSignal, 0, 50);
+        
         if (progress) { progress.report?.({ message: 'Extracting tools...', increment: 0 }); }
-        await extractZipWithProgress(zipPath, extractPath, progress);
+        await extractZipWithProgress(zipPath, extractPath, progress, 50, 45);
+        
         fs.mkdirSync(CMD_PATH, { recursive: true });
         const srcDir = findCmdToolsSourceDir(extractPath);
 
         for (const entry of fs.readdirSync(srcDir)) {
             const src = path.join(srcDir, entry);
             const dest = path.join(CMD_PATH, entry);
+
             if (fs.statSync(src).isDirectory()) {
                 if (fs.existsSync(dest)) { fs.rmSync(dest, { recursive: true, force: true }); }
                 fs.renameSync(src, dest);
@@ -812,8 +934,11 @@ export async function installCmdTools(progress?: vscode.Progress<{message?: stri
             }
         }
 
-        if (progress) { progress.report?.({ message: 'Cleaning up...', increment: 0 }); }
+        if (progress) { progress.report?.({ message: 'Finalizing installation...', increment: 5 }); } // 95 -> 100
+
+        if (progress) { progress.report?.({ message: 'Cleaning up...', increment: 0 }); }     
         fs.rmSync(tmpDir, { recursive: true, force: true });
+
     } catch (err) {
         fs.rmSync(tmpDir, { recursive: true, force: true });
         throw err;
@@ -831,7 +956,6 @@ export function removeCmdTools(): void {
         fs.rmSync(getCmdToolsPath(), { recursive: true, force: true });
     }
 }
-
 
 /**
  * Remove an installed SDK for a given API level across all OS folders.
@@ -901,6 +1025,7 @@ export async function installEmulator(
     progress?: vscode.Progress<{message?: string, increment?: number}>,
     abortSignal?: AbortSignal
 ): Promise<void> {
+
     const EMULATOR_URL = getOniroConfig(
         'emulatorUrl',
         'https://github.com/eclipse-oniro4openharmony/device_board_oniro/releases/latest/download/oniro_emulator.zip'
@@ -912,16 +1037,23 @@ export async function installEmulator(
 
     try {
         fs.mkdirSync(EMULATOR_DIR, { recursive: true });
+
         if (progress) { progress.report?.({ message: 'Downloading emulator...', increment: 0 }); }
-        await downloadFile(EMULATOR_URL, tmpZip, progress, abortSignal);
+        await downloadFile(EMULATOR_URL, tmpZip, progress, abortSignal, 0, 50);
+
         if (progress) { progress.report?.({ message: 'Extracting emulator...', increment: 0 }); }
-        await extractZipWithProgress(tmpZip, EMULATOR_DIR, progress);
+        await extractZipWithProgress(tmpZip, EMULATOR_DIR, progress, 50, 45);
+        
         const runSh = path.join(EMULATOR_DIR, 'images', 'run.sh');
         if (fs.existsSync(runSh)) {
             fs.chmodSync(runSh, 0o755);
         }
+
+        if (progress) { progress.report?.({ message: 'Finalizing installation...', increment: 5 }); } // 95 -> 100
+
         if (progress) { progress.report?.({ message: 'Cleaning up...', increment: 0 }); }
         fs.rmSync(tmpDir, { recursive: true, force: true });
+
     } catch (err) {
         fs.rmSync(tmpDir, { recursive: true, force: true });
         throw err;
